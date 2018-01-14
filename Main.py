@@ -30,11 +30,11 @@ class DataFrameSelector(TransformerMixin, BaseEstimator):
     def transform(self, X, y=None):
         return X[self.atribs].values
 
-# ToDo make it that the returned dataframe has the correct collum labels insted of ints
+
 def transform_data(data, num_atribs, cat_atribs):
     # Feature Engenering
     pd.set_option('chained_assignment', None)
-    data.loc[:,("Fare_Pclass")] = data["Fare"] / (np.power(data["Pclass"], 2))
+    data.loc[:, ("Fare_Pclass")] = data["Fare"] / (np.power(data["Pclass"], 2))
     pd.set_option('chained_assignment', 'warn')
 
     # Data Transformation
@@ -44,52 +44,50 @@ def transform_data(data, num_atribs, cat_atribs):
     saved_passengerId = data['PassengerId']
     data = data.drop(['PassengerId'], axis=1)
 
-    #print(saved_passengerId.isnull().sum())
-
     num_pipeline = Pipeline([
         ('selector', DataFrameSelector(num_atribs)),
         ('imputer', Imputer(strategy="median")),
-        #('std_scaler', StandardScaler()),
+        ('std_scaler', StandardScaler()),
     ])
 
-    transformed_data = pd.concat([pd.DataFrame(num_pipeline.fit_transform(data), columns=num_atribs), one_hot_cat_data], axis=1)
-
-    transformed_data.loc[:,('PassengerId')] = np.array(saved_passengerId.values)
-
-    print(transformed_data)
-
-    #print(transformed_data['PassengerId'].isnull().sum(), 'in trans data')
-
+    transformed_data = pd.concat([pd.DataFrame(num_pipeline.fit_transform(data), columns=num_atribs), one_hot_cat_data],
+                                 axis=1)
+    transformed_data.loc[:, ('PassengerId')] = saved_passengerId.values
     return pd.DataFrame(transformed_data)
 
 
-def run_model(train_data, train_data_lables, prediction_data):
-    # Crossvalidation of modelestClassifier()
-    # model = RandomForestClassifier()
+def run_model(model, train_data, train_data_lables, prediction_data):
+    print('Model: {}'.format(type(model).__name__))
 
-    model = MLPClassifier(hidden_layer_sizes=(100,5), max_iter=500, early_stopping=False, learning_rate_init=0.0001)
+    def drop_passenger_iD(X):
+        saved_passengerId = X['PassengerId']
+        X = X.drop(['PassengerId'], axis=1)
+        return X, saved_passengerId
 
-    model = LinearSVC()
-    model = NuSVC()
-    model = SVC(C=2.0)
+    train_data, saved_pasid_train = drop_passenger_iD(train_data)
+    prediction_data, saved_pasid_pred = drop_passenger_iD(prediction_data)
 
-
-    scores = cross_val_score(model, train_data, train_data_lables, cv=10)
-    print('cross validation scores are {} average: {}'.format(scores, sum(scores) / len(scores)))
+    # Crossvalidation of model Classifier
+    scores = cross_val_score(model, train_data, train_data_lables, cv=4)
+    print('Cross-validation score average: {}%'.format(truncate(sum(scores) / len(scores) * 100, 2)))
 
     # Test performance on Train data to detect potential overfitting
     model.fit(train_data, train_data_lables)
     pred_on_train_data = model.predict(train_data) == train_data_lables
-    print('When model is run against training data {} rigth out of {} | {}%\n'.format(
-        len([p for p in pred_on_train_data if p == True]), len(pred_on_train_data), len([p for p in pred_on_train_data if p == True]) / len(pred_on_train_data) * 100))
+    print('Acuracy on training data {}%\n'.format(
+        truncate(len([p for p in pred_on_train_data if p == True]) / len(pred_on_train_data) * 100, 2)))
 
-    return pred_on_train_data
+    df = pd.DataFrame()
+    df['PassengerId'] = saved_pasid_pred
+    df['Survived'] = model.predict(prediction_data)
+
+    return df
 
 
 def run():
     data = pd.read_csv('train.csv')
     submission_data = pd.read_csv('test.csv')
-    train_data, test_data = split_data(data, test_size=0.2)
+    train_data, test_data = split_data(data, test_size=0.01)
 
     num_atribs = ['Pclass', 'Age', 'SibSp', 'Parch', 'Fare']
     cat_atribs = ['Sex', 'Embarked']
@@ -98,24 +96,42 @@ def run():
     transformed_test_data = transform_data(test_data, num_atribs=num_atribs, cat_atribs=cat_atribs)
     transformed_submission_data = transform_data(submission_data, num_atribs=num_atribs, cat_atribs=cat_atribs)
 
-    #Stransformed_train_data.info()
-
-    # transformed_train_data.drop(['PassengerId'])
-    # transformed_submission_data.drop(['PassengerId'])
-    # transformed_train_data.drop(['PassengerId'])
-
     train_data_labels = train_data['Survived']
     test_data_labels = test_data['Survived']
 
-    prediction = run_model(transformed_train_data, train_data_labels, test_data)
+    models = {
+            0: RandomForestClassifier(max_depth=None, max_leaf_nodes=None, warm_start=True),
+            1: LinearSVC(),
+            2: NuSVC(),
+            3: SVC(C=1.0),
+            4: DecisionTreeClassifier(),
+            5: ExtraTreeClassifier(),
+        }
+    model_num_single_model = 3
 
-    submission_prediction = run_model(transformed_train_data, train_data_labels, transformed_submission_data)
+    if model_num_single_model is None:
+        for _, model in models.items():
+            #prediction_on_train_split = run_model(model, transformed_train_data, train_data_labels, transformed_test_data)
+            submission_prediction = run_model(model, transformed_train_data, train_data_labels, transformed_submission_data)
+            submission_prediction.to_csv('submission_data_{}.csv'.format(type(model).__name__), index=False)
+    else:
+        model = models[model_num_single_model]
+        submission_prediction = run_model(model, transformed_train_data, train_data_labels, transformed_submission_data)
+        submission_prediction.to_csv('submission_data_{}.csv'.format(type(model).__name__), index=False)
 
-    submission_prediction = pd.concat([pd.DataFrame(submission_prediction, index=None), submission_data['PassengerId']], axis=1)
 
-    # TODO make it that it has the correct submission format
-    pd.DataFrame(submission_prediction).to_csv('submission_data')
+# Utilities
+def truncate(f, n):
+    '''Truncates/pads a float f to n decimal places without rounding'''
+    s = '{}'.format(f)
+    if 'e' in s or 'E' in s:
+        return '{0:.{1}f}'.format(f, n)
+    i, p, d = s.partition('.')
+    return '.'.join([i, (d + '0' * n)[:n]])
 
 
 if __name__ == '__main__':
+    print('\n')
     run()
+
+
