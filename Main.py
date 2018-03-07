@@ -17,6 +17,7 @@ from sklearn.tree import DecisionTreeClassifier, ExtraTreeClassifier
 from sklearn.naive_bayes import MultinomialNB, GaussianNB
 from sklearn.neural_network import MLPClassifier
 from sklearn.neighbors import KNeighborsClassifier
+from sklearn.gaussian_process import GaussianProcessClassifier
 
 
 def project_setup(saved_models_path='data/', saved_predictions_path='predictions/'):
@@ -142,52 +143,60 @@ def run():
         7: KNeighborsClassifier(),
         8: MLPClassifier(max_iter=1000),
         9: AdaBoostClassifier(),
+        10: GaussianProcessClassifier(),
     }
-    model_num_single_model = 3
+    model_num_single_model = 0
 
-    param_dist = {
-        'C': list(range(1, 15)),
-        'kernel': ['rbf', 'sigmoid'], #['rbf'], 'poly', 'linear', 'sigmoid', 'precomputed'],
-        'degree': [3],
-        'gamma': ['auto'],
-        'coef0': [0.0],
-        'shrinking': [True],
-        'probability': [False],
-        'tol': [1e-3],
-        'cache_size': list(range(1, 2000)),
-        'class_weight': [None],
-        'verbose': [False],
-        'max_iter': [-1],
-        'decision_function_shape': ['ovr'],
-        'random_state': [42]
-    }
+    # MLP, SVC, RandForest
 
-    transformed_train_data, saved_pasid_train = drop_passenger_iD(transformed_train_data)
-    transformed_submission_data, saved_pasid_pred = drop_passenger_iD(transformed_submission_data)
+    # param_dist = {
+    #     'C': list(range(1, 15)),
+    #     'kernel': ['rbf', 'sigmoid'], #['rbf'], 'poly', 'linear', 'sigmoid', 'precomputed'],
+    #     'degree': [3],
+    #     'gamma': ['auto'],
+    #     'coef0': [0.0],
+    #     'shrinking': [True],
+    #     'probability': [False],
+    #     'tol': [1e-3],
+    #     'cache_size': list(range(1, 2000)),
+    #     'class_weight': [None],
+    #     'verbose': [False],
+    #     'max_iter': [-1],
+    #     'decision_function_shape': ['ovr'],
+    #     'random_state': [42]
+    # }
+    #
+    # transformed_train_data, saved_pasid_train = drop_passenger_iD(transformed_train_data)
+    # transformed_submission_data, saved_pasid_pred = drop_passenger_iD(transformed_submission_data)
+    #
+    # rand_search = RandomizedSearchCV(models[model_num_single_model], n_iter=10000, param_distributions=param_dist)
+    # rand_search.fit(transformed_train_data, train_data_labels)
+    # print(rand_search.best_estimator_)
+    # submission_prediction = rand_search.predict(transformed_submission_data)
+    #
+    # df = pd.DataFrame()
+    # df['PassengerId'] = saved_pasid_pred
+    # df['Survived'] = submission_prediction
+    #
+    # df.to_csv(
+    #     '{}submission_data_randcv_SVC.csv'.format(paths.get('saved_predictions_path')), index=False)
 
-    rand_search = RandomizedSearchCV(models[model_num_single_model], n_iter=10000, param_distributions=param_dist)
-    rand_search.fit(transformed_train_data, train_data_labels)
-    print(rand_search.best_estimator_)
-    submission_prediction = rand_search.predict(transformed_submission_data)
+    if model_num_single_model is None:
+        for _, model in models.items():
+            # prediction_on_train_split = run_model(model, transformed_train_data, train_data_labels, transformed_test_data)
+            submission_prediction = run_model(model, transformed_train_data, train_data_labels,
+                                              transformed_submission_data)
+            submission_prediction.to_csv('{}submission_data_{}.csv'.format(paths.get('saved_predictions_path'), type(model).__name__), index=False)
+    else:
+        model = models[model_num_single_model]
+        submission_prediction = run_model(model, transformed_train_data, train_data_labels,
+                                          transformed_submission_data)
+        submission_prediction.to_csv('{}submission_data_{}.csv'.format(paths.get('saved_predictions_path'), type(model).__name__), index=False)
 
     df = pd.DataFrame()
-    df['PassengerId'] = saved_pasid_pred
-    df['Survived'] = submission_prediction
-
-    df.to_csv(
-        '{}submission_data_randcv_SVC.csv'.format(paths.get('saved_predictions_path')), index=False)
-
-    # if model_num_single_model is None:
-    #     for _, model in models.items():
-    #         # prediction_on_train_split = run_model(model, transformed_train_data, train_data_labels, transformed_test_data)
-    #         submission_prediction = run_model(model, transformed_train_data, train_data_labels,
-    #                                           transformed_submission_data)
-    #         submission_prediction.to_csv('{}submission_data_{}.csv'.format(paths.get('saved_predictions_path'), type(model).__name__), index=False)
-    # else:
-    #     model = models[model_num_single_model]
-    #     submission_prediction = run_model(model, transformed_train_data, train_data_labels,
-    #                                       transformed_submission_data)
-    #     submission_prediction.to_csv('{}submission_data_{}.csv'.format(paths.get('saved_predictions_path'), type(model).__name__), index=False)
+    df['PassengerId'] = list(range(892, 1310))
+    df['Survived'] = np.zeros(1310 - 892)
+    df.to_csv('all_true.csv', index=False)
 
 
 # Utilities
